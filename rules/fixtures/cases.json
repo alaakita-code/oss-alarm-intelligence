@@ -1,0 +1,67 @@
+{
+  "correlation_window_seconds": 900,
+  "match_rule_cases": [
+    { "desc": "傳輸中斷 應命中 R-TX-001", "input": "TPE-A03 傳輸中斷 08:00", "expected_rule_id": "R-TX-001" },
+    { "desc": "小區離線 應命中 R-CELL-001", "input": "TPE-A03 小區離線 08:03", "expected_rule_id": "R-CELL-001" },
+    { "desc": "電力異常 應命中 R-PWR-001", "input": "市電中斷，站點斷電", "expected_rule_id": "R-PWR-001" },
+    { "desc": "硬體故障 應命中 R-HW-001", "input": "板卡異常，硬體故障告警", "expected_rule_id": "R-HW-001" },
+    { "desc": "無匹配內容 應落到 R-DEFAULT", "input": "不明告警內容 xyz123", "expected_rule_id": "R-DEFAULT" },
+    { "desc": "英文 Transmission Down 應命中 R-TX-001", "input": "Transmission Down detected", "expected_rule_id": "R-TX-001" }
+  ],
+  "window_cases": [
+    { "desc": "正常值：間隔遠小於窗口(60秒)", "ts_a": 1000, "ts_b": 1060, "expected_within": true },
+    { "desc": "正常值：間隔遠大於窗口(3600秒)", "ts_a": 1000, "ts_b": 4600, "expected_within": false },
+    { "desc": "邊界值：剛好等於窗口(900秒) 應為 true", "ts_a": 1000, "ts_b": 1900, "expected_within": true },
+    { "desc": "邊界值：窗口+1秒(901秒) 應為 false", "ts_a": 1000, "ts_b": 1901, "expected_within": false },
+    { "desc": "邊界值：窗口-1秒(899秒) 應為 true", "ts_a": 1000, "ts_b": 1899, "expected_within": true }
+  ],
+  "correlate_alarms_cases": [
+    {
+      "desc": "TPE-A03 傳輸中斷+小區離線 應合併為一個Incident，root cause為傳輸中斷",
+      "alarms": [
+        { "id": "a1", "site_id": "TPE-A03", "ts": 1000, "text": "傳輸中斷" },
+        { "id": "a2", "site_id": "TPE-A03", "ts": 1180, "text": "小區離線" }
+      ],
+      "expected_incidents": [
+        {
+          "site_id": "TPE-A03",
+          "alarm_ids": ["a1", "a2"],
+          "root_cause_alarm_id": "a1",
+          "root_cause_rule_id": "R-TX-001"
+        }
+      ]
+    },
+    {
+      "desc": "不同站點應各自獨立成 Incident，不互相關聯",
+      "alarms": [
+        { "id": "b1", "site_id": "TPE-A03", "ts": 1000, "text": "傳輸中斷" },
+        { "id": "b2", "site_id": "TPE-B07", "ts": 1010, "text": "小區離線" }
+      ],
+      "expected_incidents": [
+        { "site_id": "TPE-A03", "alarm_ids": ["b1"], "root_cause_alarm_id": "b1", "root_cause_rule_id": "R-TX-001" },
+        { "site_id": "TPE-B07", "alarm_ids": ["b2"], "root_cause_alarm_id": "b2", "root_cause_rule_id": "R-CELL-001" }
+      ]
+    },
+    {
+      "desc": "邊界值：同站點兩筆間隔剛好900秒，應合併",
+      "alarms": [
+        { "id": "c1", "site_id": "TPE-C01", "ts": 2000, "text": "電力異常" },
+        { "id": "c2", "site_id": "TPE-C01", "ts": 2900, "text": "小區離線" }
+      ],
+      "expected_incidents": [
+        { "site_id": "TPE-C01", "alarm_ids": ["c1", "c2"], "root_cause_alarm_id": "c1", "root_cause_rule_id": "R-PWR-001" }
+      ]
+    },
+    {
+      "desc": "邊界值：同站點兩筆間隔901秒，不應合併",
+      "alarms": [
+        { "id": "d1", "site_id": "TPE-D02", "ts": 3000, "text": "電力異常" },
+        { "id": "d2", "site_id": "TPE-D02", "ts": 3901, "text": "小區離線" }
+      ],
+      "expected_incidents": [
+        { "site_id": "TPE-D02", "alarm_ids": ["d1"], "root_cause_alarm_id": "d1", "root_cause_rule_id": "R-PWR-001" },
+        { "site_id": "TPE-D02", "alarm_ids": ["d2"], "root_cause_alarm_id": "d2", "root_cause_rule_id": "R-CELL-001" }
+      ]
+    }
+  ]
+}
