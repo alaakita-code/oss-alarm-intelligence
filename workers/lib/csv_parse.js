@@ -64,7 +64,7 @@ function csvTextToObjects(text) {
   return result;
 }
 
-module.exports = {
-  parseCsvText: parseCsvText,
-  csvTextToObjects: csvTextToObjects
+export {
+  parseCsvText,
+  csvTextToObjects
 };
