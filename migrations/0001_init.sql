@@ -1,4 +1,3 @@
-
 -- migrations/0001_init.sql
 -- OSS Alarm Intelligence — D1 初始 schema
 -- 原則：原始 payload 存 R2，D1 只放正規化後的結構化資料
