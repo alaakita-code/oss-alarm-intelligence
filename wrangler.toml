@@ -13,12 +13,10 @@ binding = "ASSETS"
 not_found_handling = "404-page"
 
 # ---- D1 ----
-# 先執行: wrangler d1 create oss-alarm-db
-# 執行後把回傳的 database_id 填入下方（兩份 toml 都要填同一組 ID）
 [[d1_databases]]
 binding = "DB"
 database_name = "oss-alarm-db"
-database_id = "<YOUR_DATABASE_ID>"
+database_id = "e595a9a3-4bcd-42c2-b4f5-709416e54bed"
 migrations_dir = "migrations"
 
 # ---- R2（暫不啟用：未開通R2訂閱，程式碼已改為選用依賴，不影響核心功能）----
@@ -29,9 +27,6 @@ migrations_dir = "migrations"
 # bucket_name = "oss-alarm-raw"
 
 # ---- Queues (Producer 端，本 Worker 只送訊息，不消費) ----
-# 先執行:
-#   wrangler queues create oss-alarm-ingest-queue
-#   wrangler queues create oss-alarm-ingest-dlq
 [[queues.producers]]
 binding = "ALARM_QUEUE"
 queue = "oss-alarm-ingest-queue"
