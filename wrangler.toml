@@ -1,0 +1,34 @@
+# wrangler.toml — Cloudflare Pages 專案設定
+# 負責：Dashboard(dist/) + Pages Functions API(functions/api)
+# ⚠️ Queue Consumer 是獨立 Worker，設定在 wrangler.consumer.toml，不能塞在這裡一起跑。
+
+name = "oss-alarm-intelligence"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "dist"
+
+# ---- D1 ----
+# 先執行: wrangler d1 create oss-alarm-db
+# 執行後把回傳的 database_id 填入下方（兩份 toml 都要填同一組 ID）
+[[d1_databases]]
+binding = "DB"
+database_name = "oss-alarm-db"
+database_id = "<YOUR_DATABASE_ID>"
+migrations_dir = "migrations"
+
+# ---- R2 ----
+# 先執行: wrangler r2 bucket create oss-alarm-raw
+[[r2_buckets]]
+binding = "RAW_BUCKET"
+bucket_name = "oss-alarm-raw"
+
+# ---- Queues (Producer 端，Pages Functions 只送訊息，不消費) ----
+# 先執行:
+#   wrangler queues create oss-alarm-ingest-queue
+#   wrangler queues create oss-alarm-ingest-dlq
+[[queues.producers]]
+binding = "ALARM_QUEUE"
+queue = "oss-alarm-ingest-queue"
+
+# ---- Secrets ----
+# wrangler pages secret put INGEST_TOKEN
+# 本地開發放 .dev.vars: INGEST_TOKEN=dev-token

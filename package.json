@@ -1,0 +1,20 @@
+{
+  "name": "oss-alarm-intelligence",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ALAAKITA 純 Cloudflare 邊緣運算作品線 - OSS 告警智慧分析平台",
+  "scripts": {
+    "dev": "wrangler pages dev dist --compatibility-date=2025-01-01",
+    "deploy": "wrangler pages deploy dist",
+    "deploy:consumer": "wrangler deploy --config wrangler.consumer.toml",
+    "db:create": "wrangler d1 create oss-alarm-db",
+    "db:migrate:local": "wrangler d1 migrations apply oss-alarm-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply oss-alarm-db --remote",
+    "r2:create": "wrangler r2 bucket create oss-alarm-raw",
+    "queue:create": "wrangler queues create oss-alarm-ingest-queue && wrangler queues create oss-alarm-ingest-dlq",
+    "test": "node tests/normalize.test.js && node tests/csv_parse.test.js && python3 rules/fixtures/cross_validate.py"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

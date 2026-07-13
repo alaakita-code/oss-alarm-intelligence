@@ -1,0 +1,29 @@
+# wrangler.consumer.toml — Queue Consumer 獨立 Worker 設定
+# 負責：消費 oss-alarm-ingest-queue，跑 workers/consumer.js
+# 部署：wrangler deploy --config wrangler.consumer.toml
+
+name = "oss-alarm-intelligence-consumer"
+main = "workers/consumer.js"
+compatibility_date = "2025-01-01"
+
+# ---- D1 ---- 需與 wrangler.toml 填同一組 database_id
+[[d1_databases]]
+binding = "DB"
+database_name = "oss-alarm-db"
+database_id = "<YOUR_DATABASE_ID>"
+
+# ---- R2 ----
+[[r2_buckets]]
+binding = "RAW_BUCKET"
+bucket_name = "oss-alarm-raw"
+
+# ---- Queues (Consumer 端) ----
+[[queues.consumers]]
+queue = "oss-alarm-ingest-queue"
+max_batch_size = 10
+max_retries = 3
+dead_letter_queue = "oss-alarm-ingest-dlq"
+
+# ---- Workers AI ----
+[ai]
+binding = "AI"
