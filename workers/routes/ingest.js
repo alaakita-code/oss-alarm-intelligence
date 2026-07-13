@@ -1,7 +1,7 @@
 // workers/routes/ingest.js
 // 對應 AC-1: CSV 匯入
 //   - 回應含 {imported, skipped, errors[]}, imported+skipped = 總筆數
-//   - 原始CSV完整落地R2(key含時間戳,不覆寫)
+//   - 原始CSV完整落地R2(選用,key含時間戳,不覆寫)
 //   - 每筆寫入D1前先正規化
 
 import { csvTextToObjects } from '../lib/csv_parse.js';
@@ -42,10 +42,14 @@ export async function handleIngestCsv(request, env) {
     return jsonRes({ ok: false, error: 'CSV 內容為空或格式無法解析' }, 400);
   }
 
-  // 原始CSV落地R2，key含時間戳，不覆寫
+  // 原始CSV落地R2(選用)，key含時間戳，不覆寫
+  // R2非必要依賴：若未綁定RAW_BUCKET(例如尚未啟用R2訂閱)，則跳過原始檔備份，不影響匯入本身
   var batchId = uuid();
-  var r2Key = 'raw-csv/' + new Date().toISOString().replace(/[:.]/g, '-') + '_' + batchId + '.csv';
-  await env.RAW_BUCKET.put(r2Key, text);
+  var r2Key = null;
+  if (env.RAW_BUCKET) {
+    r2Key = 'raw-csv/' + new Date().toISOString().replace(/[:.]/g, '-') + '_' + batchId + '.csv';
+    await env.RAW_BUCKET.put(r2Key, text);
+  }
 
   // 正規化
   var result = normalizeAlarmBatch(rawRows);
