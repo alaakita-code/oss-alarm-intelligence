@@ -84,9 +84,9 @@ function normalizeAlarmBatch(rawRows) {
   return { normalized: normalized, errors: errors };
 }
 
-module.exports = {
-  normalizeSeverity: normalizeSeverity,
-  parseTimestamp: parseTimestamp,
-  normalizeAlarmRow: normalizeAlarmRow,
-  normalizeAlarmBatch: normalizeAlarmBatch
+export {
+  normalizeSeverity,
+  parseTimestamp,
+  normalizeAlarmRow,
+  normalizeAlarmBatch
 };
