@@ -2,7 +2,7 @@
 export async function handleHealth(request, env) {
   var checks = {
     d1: false,
-    r2: false,
+    r2: false,        // 選用：未啟用R2訂閱時此項為false屬正常，不影響整體健康判定
     queue: false,
     ai: false
   };
@@ -18,7 +18,8 @@ export async function handleHealth(request, env) {
   checks.queue = !!env.ALARM_QUEUE;
   checks.ai = !!env.AI;
 
-  var allOk = checks.d1 && checks.r2 && checks.queue && checks.ai;
+  // R2為選用資源，健康判定只看D1/Queue/AI（核心功能依賴項）
+  var allOk = checks.d1 && checks.queue && checks.ai;
 
   return new Response(JSON.stringify({ ok: allOk, checks: checks }), {
     status: allOk ? 200 : 503,
