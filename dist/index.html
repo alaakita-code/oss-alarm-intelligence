@@ -1,1 +1,456 @@
+﻿<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>OSS 告警智慧分析平台 | ALAAKITA</title>
+<style>
+:root {
+  --navy: #0d1f3c;
+  --gold: #f59e0b;
+  --accent: #2563eb;
+  --red: #dc2626;
+  --green: #059669;
+  --card: #fff;
+  --light: #f8fafc;
+  --border: #e2e8f0;
+  --text: #1e293b;
+  --muted: #64748b;
+  --mono: 'Courier New', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  background: var(--light);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+.topbar {
+  background: var(--navy);
+  color: #fff;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.topbar .brand { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.topbar .brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
+.topbar .status { font-size: 12px; color: #cbd5e1; }
+.topbar .status.offline { color: #fca5a5; }
 
+.tabnav {
+  display: flex;
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  position: sticky;
+  top: 52px;
+  z-index: 99;
+}
+.tab {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+}
+.tab.active { color: var(--navy); border-bottom-color: var(--gold); font-weight: 700; }
+
+.main { padding: 14px; max-width: 900px; margin: 0 auto; }
+.module { display: none; }
+.module.active { display: block; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.card h3 { font-size: 14px; margin-bottom: 8px; color: var(--navy); }
+
+.offline-banner {
+  display: none;
+  background: #fef3c7;
+  border: 1px solid var(--gold);
+  color: #92400e;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.offline-banner.show { display: block; }
+
+.incident-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.incident-item:active { background: var(--light); }
+.incident-item .site { font-weight: 700; color: var(--navy); font-size: 14px; }
+.incident-item .badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-left: 6px;
+}
+.badge.open { background: #fee2e2; color: var(--red); }
+.badge.acknowledged { background: #fef3c7; color: #92400e; }
+.badge.resolved { background: #d1fae5; color: var(--green); }
+.incident-item .suggestion { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.incident-item .meta { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+
+.alarm-row {
+  display: flex; justify-content: space-between; padding: 8px 0;
+  border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.sev-critical { color: var(--red); font-weight: 700; }
+.sev-major { color: #ea580c; font-weight: 700; }
+.sev-minor { color: var(--accent); }
+.sev-warning { color: var(--muted); }
+
+.btn {
+  background: var(--accent); color: #fff; border: none; border-radius: 8px;
+  padding: 10px 16px; font-size: 14px; cursor: pointer;
+}
+.btn.gold { background: var(--gold); }
+.btn.outline { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+.btn:disabled { opacity: 0.5; }
+
+input[type=text], input[type=url], select {
+  width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 14px; margin-bottom: 10px;
+}
+.file-drop {
+  border: 2px dashed var(--border); border-radius: 10px; padding: 24px;
+  text-align: center; color: var(--muted); font-size: 13px;
+}
+
+.empty-state { text-align: center; color: var(--muted); padding: 30px 0; font-size: 13px; }
+.loading { text-align: center; color: var(--muted); padding: 20px 0; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="dot" id="conn-dot"></span> OSS 告警智慧分析</div>
+  <div class="status" id="conn-status">連線中…</div>
+</div>
+
+<div class="tabnav">
+  <div class="tab active" data-tab="overview" onclick="showTab('overview')">📊 總覽</div>
+  <div class="tab" data-tab="incidents" onclick="showTab('incidents')">🚨 Incident</div>
+  <div class="tab" data-tab="alarms" onclick="showTab('alarms')">📋 告警清單</div>
+  <div class="tab" data-tab="import" onclick="showTab('import')">📥 CSV 匯入</div>
+  <div class="tab" data-tab="settings" onclick="showTab('settings')">⚙️ 設定</div>
+</div>
+
+<div class="main">
+  <div class="offline-banner" id="offline-banner">⚠️ 離線快取模式，資料可能非最新（上次更新：<span id="cache-time">-</span>）</div>
+
+  <!-- 總覽 -->
+  <div id="mod-overview" class="module active">
+    <div class="card">
+      <h3>即時狀態</h3>
+      <div id="overview-stats" class="loading">載入中…</div>
+    </div>
+    <div class="card">
+      <h3>最新 Incident</h3>
+      <div id="overview-recent"></div>
+    </div>
+  </div>
+
+  <!-- Incident 列表 -->
+  <div id="mod-incidents" class="module">
+    <div class="card">
+      <h3>Incident 列表</h3>
+      <select id="incident-filter" onchange="loadIncidents()">
+        <option value="">全部狀態</option>
+        <option value="open">未處理 (open)</option>
+        <option value="acknowledged">已確認 (acknowledged)</option>
+        <option value="resolved">已解決 (resolved)</option>
+      </select>
+      <div id="incident-list" class="loading">載入中…</div>
+    </div>
+  </div>
+
+  <!-- Incident 詳情（覆蓋顯示） -->
+  <div id="mod-incident-detail" class="module">
+    <button class="btn outline" onclick="showTab('incidents')">← 返回列表</button>
+    <div class="card" id="incident-detail-body"></div>
+  </div>
+
+  <!-- 告警清單 -->
+  <div id="mod-alarms" class="module">
+    <div class="card">
+      <h3>告警清單</h3>
+      <input type="text" id="alarm-site-filter" placeholder="輸入站點代碼篩選，例如 TPE-A03">
+      <button class="btn" onclick="loadAlarms()">查詢</button>
+      <div id="alarm-list" class="loading" style="margin-top:10px;">請輸入站點或直接查詢全部</div>
+    </div>
+  </div>
+
+  <!-- CSV 匯入 -->
+  <div id="mod-import" class="module">
+    <div class="card">
+      <h3>CSV 批次匯入告警</h3>
+      <div class="file-drop">
+        <input type="file" id="csv-file-input" accept=".csv">
+        <p style="margin-top:8px;">選擇 CSV 檔案（需含欄位：站點代碼/site_id、告警類型/description、嚴重度/severity、時間/timestamp）</p>
+      </div>
+      <button class="btn gold" style="margin-top:10px;" onclick="submitCsvImport()">上傳並匯入</button>
+      <div id="import-result" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- 設定 -->
+  <div id="mod-settings" class="module">
+    <div class="card">
+      <h3>API 端點設定</h3>
+      <input type="url" id="api-base-input" placeholder="例如 https://oss-alarm-intelligence.pages.dev">
+      <button class="btn" onclick="saveApiBase()">儲存</button>
+      <p style="font-size:12px;color:var(--muted);margin-top:8px;">未部署前可留空，將使用本頁同網域 /api</p>
+    </div>
+    <div class="card">
+      <h3>關於</h3>
+      <p style="font-size:13px;color:var(--muted);">OSS Alarm Intelligence — ALAAKITA 純 Cloudflare 邊緣運算作品線。資料來源：Cloudflare D1，離線時退回本機快取。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+var AppState = {
+  apiBase: '',
+  lastIncidents: [],
+  lastAlarms: [],
+  lastCacheTime: null
+};
+
+function save() {
+  try { localStorage.setItem('zk_ossalarm_state', JSON.stringify(AppState)); } catch(e) {}
+}
+function load() {
+  try {
+    var d = localStorage.getItem('zk_ossalarm_state');
+    if (d) {
+      var p = JSON.parse(d);
+      Object.keys(p).forEach(function(k){ if (AppState[k] !== undefined) AppState[k] = p[k]; });
+    }
+  } catch(e) {}
+}
+
+function showTab(id) {
+  document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+  var mod = document.getElementById('mod-' + id);
+  if (mod) mod.classList.add('active');
+  var tab = document.querySelector('[data-tab="' + id + '"]');
+  if (tab) tab.classList.add('active');
+
+  if (id === 'overview') loadOverview();
+  if (id === 'incidents') loadIncidents();
+}
+
+function apiUrl(path) {
+  var base = AppState.apiBase || '';
+  return base + path;
+}
+
+function setOnlineStatus(online) {
+  var dot = document.getElementById('conn-dot');
+  var status = document.getElementById('conn-status');
+  var banner = document.getElementById('offline-banner');
+  if (online) {
+    dot.style.background = 'var(--green)';
+    status.textContent = '線上';
+    status.className = 'status';
+    banner.classList.remove('show');
+  } else {
+    dot.style.background = 'var(--red)';
+    status.textContent = '離線快取模式';
+    status.className = 'status offline';
+    banner.classList.add('show');
+    document.getElementById('cache-time').textContent = AppState.lastCacheTime || '無快取紀錄';
+  }
+}
+
+function apiFetch(path) {
+  return fetch(apiUrl(path)).then(function(res) {
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  });
+}
+
+// ---- 總覽 ----
+function loadOverview() {
+  apiFetch('/api/incidents?limit=5').then(function(data) {
+    setOnlineStatus(true);
+    AppState.lastIncidents = data.incidents;
+    AppState.lastCacheTime = new Date().toLocaleString('zh-TW');
+    save();
+    renderOverview(data.incidents);
+  }).catch(function() {
+    setOnlineStatus(false);
+    renderOverview(AppState.lastIncidents || []);
+  });
+}
+
+function renderOverview(incidents) {
+  var openCount = incidents.filter(function(i){ return i.status === 'open'; }).length;
+  document.getElementById('overview-stats').innerHTML =
+    '<div style="display:flex;gap:20px;">' +
+    '<div><div style="font-size:24px;font-weight:700;color:var(--red);">' + openCount + '</div><div style="font-size:12px;color:var(--muted);">未處理 Incident</div></div>' +
+    '<div><div style="font-size:24px;font-weight:700;color:var(--navy);">' + incidents.length + '</div><div style="font-size:12px;color:var(--muted);">近期 Incident 總數</div></div>' +
+    '</div>';
+
+  if (incidents.length === 0) {
+    document.getElementById('overview-recent').innerHTML = '<div class="empty-state">目前沒有 Incident 紀錄</div>';
+    return;
+  }
+  document.getElementById('overview-recent').innerHTML = incidents.slice(0, 3).map(renderIncidentItem).join('');
+}
+
+// ---- Incident 列表 ----
+function loadIncidents() {
+  var filter = document.getElementById('incident-filter').value;
+  var path = '/api/incidents' + (filter ? ('?status=' + filter) : '');
+  document.getElementById('incident-list').innerHTML = '<div class="loading">載入中…</div>';
+
+  apiFetch(path).then(function(data) {
+    setOnlineStatus(true);
+    AppState.lastIncidents = data.incidents;
+    AppState.lastCacheTime = new Date().toLocaleString('zh-TW');
+    save();
+    renderIncidentList(data.incidents);
+  }).catch(function() {
+    setOnlineStatus(false);
+    renderIncidentList(AppState.lastIncidents || []);
+  });
+}
+
+function renderIncidentList(incidents) {
+  if (incidents.length === 0) {
+    document.getElementById('incident-list').innerHTML = '<div class="empty-state">沒有符合條件的 Incident</div>';
+    return;
+  }
+  document.getElementById('incident-list').innerHTML = incidents.map(renderIncidentItem).join('');
+}
+
+function renderIncidentItem(inc) {
+  var badgeLabel = { open: '未處理', acknowledged: '已確認', resolved: '已解決' }[inc.status] || inc.status;
+  var time = inc.created_at ? new Date(inc.created_at * 1000).toLocaleString('zh-TW') : '';
+  return '<div class="incident-item" onclick="viewIncident(\'' + inc.id + '\')">' +
+    '<div class="site">' + inc.site_id + '<span class="badge ' + inc.status + '">' + badgeLabel + '</span></div>' +
+    '<div class="suggestion">' + (inc.ai_summary || inc.suggestion || '') + '</div>' +
+    '<div class="meta">' + time + '</div>' +
+    '</div>';
+}
+
+// ---- Incident 詳情 ----
+function viewIncident(id) {
+  document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
+  document.getElementById('mod-incident-detail').classList.add('active');
+  document.getElementById('incident-detail-body').innerHTML = '<div class="loading">載入中…</div>';
+
+  apiFetch('/api/incidents/' + id).then(function(data) {
+    setOnlineStatus(true);
+    renderIncidentDetail(data.incident, data.alarms);
+  }).catch(function() {
+    setOnlineStatus(false);
+    document.getElementById('incident-detail-body').innerHTML = '<div class="empty-state">離線狀態下無法載入詳情，請於恢復連線後重試</div>';
+  });
+}
+
+function renderIncidentDetail(incident, alarms) {
+  var html = '<h3>' + incident.site_id + ' — Incident 詳情</h3>';
+  html += '<p style="margin:10px 0;">' + (incident.ai_summary || incident.suggestion || '') + '</p>';
+  html += '<p style="font-size:12px;color:var(--muted);">Root Cause Rule: ' + (incident.root_cause_rule_id || '無') + '</p>';
+  html += '<h3 style="margin-top:16px;">關聯告警（' + alarms.length + ' 筆）</h3>';
+  html += alarms.map(function(a) {
+    var time = new Date(a.ts * 1000).toLocaleString('zh-TW');
+    return '<div class="alarm-row"><span class="sev-' + a.severity + '">' + a.raw_text + '</span><span>' + time + '</span></div>';
+  }).join('');
+  document.getElementById('incident-detail-body').innerHTML = html;
+}
+
+// ---- 告警清單 ----
+function loadAlarms() {
+  var siteId = document.getElementById('alarm-site-filter').value.trim();
+  var path = '/api/alarms' + (siteId ? ('?site_id=' + encodeURIComponent(siteId)) : '');
+  document.getElementById('alarm-list').innerHTML = '<div class="loading">載入中…</div>';
+
+  apiFetch(path).then(function(data) {
+    setOnlineStatus(true);
+    AppState.lastAlarms = data.alarms;
+    save();
+    renderAlarmList(data.alarms);
+  }).catch(function() {
+    setOnlineStatus(false);
+    renderAlarmList(AppState.lastAlarms || []);
+  });
+}
+
+function renderAlarmList(alarms) {
+  if (alarms.length === 0) {
+    document.getElementById('alarm-list').innerHTML = '<div class="empty-state">沒有符合條件的告警</div>';
+    return;
+  }
+  document.getElementById('alarm-list').innerHTML = alarms.map(function(a) {
+    var time = new Date(a.ts * 1000).toLocaleString('zh-TW');
+    return '<div class="alarm-row"><span class="sev-' + a.severity + '">[' + a.site_id + '] ' + a.raw_text + '</span><span>' + time + '</span></div>';
+  }).join('');
+}
+
+// ---- CSV 匯入 ----
+function submitCsvImport() {
+  var fileInput = document.getElementById('csv-file-input');
+  var resultDiv = document.getElementById('import-result');
+  if (!fileInput.files || fileInput.files.length === 0) {
+    resultDiv.innerHTML = '<p style="color:var(--red);">請先選擇 CSV 檔案</p>';
+    return;
+  }
+  var formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  resultDiv.innerHTML = '<div class="loading">上傳中…</div>';
+
+  fetch(apiUrl('/api/alarms/import'), { method: 'POST', body: formData })
+    .then(function(res){ return res.json(); })
+    .then(function(data) {
+      if (!data.ok) {
+        resultDiv.innerHTML = '<p style="color:var(--red);">匯入失敗：' + data.error + '</p>';
+        return;
+      }
+      var errHtml = data.errors.length > 0
+        ? '<details style="margin-top:8px;font-size:12px;"><summary>' + data.errors.length + ' 筆錯誤（點擊展開）</summary>' +
+          data.errors.map(function(e){ return '<div>第 ' + (e.row_index+1) + ' 列：' + e.error + '</div>'; }).join('') + '</details>'
+        : '';
+      resultDiv.innerHTML = '<p style="color:var(--green);">✓ 匯入完成：成功 ' + data.imported + ' 筆，跳過 ' + data.skipped + ' 筆</p>' + errHtml;
+    })
+    .catch(function(e) {
+      resultDiv.innerHTML = '<p style="color:var(--red);">上傳失敗：' + e.message + '（請確認網路連線與 API 設定）</p>';
+    });
+}
+
+// ---- 設定 ----
+function saveApiBase() {
+  AppState.apiBase = document.getElementById('api-base-input').value.trim();
+  save();
+  alert('已儲存，重新整理頁面後生效');
+}
+
+// ---- INIT ----
+(function init() {
+  load();
+  document.getElementById('api-base-input').value = AppState.apiBase || '';
+  loadOverview();
+})();
+</script>
+</body>
+</html>
