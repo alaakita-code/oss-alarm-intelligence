@@ -3,6 +3,7 @@
 //   - 回應含 {imported, skipped, errors[]}, imported+skipped = 總筆數
 //   - 原始CSV完整落地R2(選用,key含時間戳,不覆寫)
 //   - 每筆寫入D1前先正規化
+//   - batch_id 為批次關聯鍵（不依賴r2_ref，r2_ref可能因R2未綁定而為NULL）
 
 import { csvTextToObjects } from '../lib/csv_parse.js';
 import { normalizeAlarmBatch } from '../lib/normalize.js';
@@ -42,9 +43,11 @@ export async function handleIngestCsv(request, env) {
     return jsonRes({ ok: false, error: 'CSV 內容為空或格式無法解析' }, 400);
   }
 
+  var batchId = uuid();
+
   // 原始CSV落地R2(選用)，key含時間戳，不覆寫
   // R2非必要依賴：若未綁定RAW_BUCKET(例如尚未啟用R2訂閱)，則跳過原始檔備份，不影響匯入本身
-  var batchId = uuid();
+  // 注意：r2Key 純粹代表「R2原始檔位置」，可以是null，批次關聯一律用 batchId，不依賴這個值
   var r2Key = null;
   if (env.RAW_BUCKET) {
     r2Key = 'raw-csv/' + new Date().toISOString().replace(/[:.]/g, '-') + '_' + batchId + '.csv';
@@ -64,8 +67,8 @@ export async function handleIngestCsv(request, env) {
     var alarmId = uuid();
     stmts.push(
       env.DB.prepare(
-        'INSERT INTO alarms (id, site_id, raw_text, severity, ts, source, r2_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-      ).bind(alarmId, a.site_id, a.raw_text, a.severity, a.ts, 'csv_import', r2Key, now)
+        'INSERT INTO alarms (id, site_id, raw_text, severity, ts, source, r2_ref, batch_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).bind(alarmId, a.site_id, a.raw_text, a.severity, a.ts, 'csv_import', r2Key, batchId, now)
     );
   }
 
@@ -79,8 +82,9 @@ export async function handleIngestCsv(request, env) {
   ).bind(batchId, file.name || 'unknown.csv', normalized.length, errors.length, JSON.stringify(errors), r2Key, now).run();
 
   // 觸發背景關聯分析（丟進Queue，由consumer處理，不同步阻塞回應）
+  // 只送 batch_id，consumer端查詢一律用 batch_id，不再依賴 r2_ref
   if (normalized.length > 0) {
-    await env.ALARM_QUEUE.send({ type: 'correlate_batch', batch_id: batchId, r2_ref: r2Key });
+    await env.ALARM_QUEUE.send({ type: 'correlate_batch', batch_id: batchId });
   }
 
   return jsonRes({
