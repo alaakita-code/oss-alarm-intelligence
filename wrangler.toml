@@ -21,11 +21,12 @@ database_name = "oss-alarm-db"
 database_id = "<YOUR_DATABASE_ID>"
 migrations_dir = "migrations"
 
-# ---- R2 ----
-# 先執行: wrangler r2 bucket create oss-alarm-raw
-[[r2_buckets]]
-binding = "RAW_BUCKET"
-bucket_name = "oss-alarm-raw"
+# ---- R2（暫不啟用：未開通R2訂閱，程式碼已改為選用依賴，不影響核心功能）----
+# 若之後要啟用，先執行: wrangler r2 bucket create oss-alarm-raw
+# 再取消下方註解並填入binding：
+# [[r2_buckets]]
+# binding = "RAW_BUCKET"
+# bucket_name = "oss-alarm-raw"
 
 # ---- Queues (Producer 端，本 Worker 只送訊息，不消費) ----
 # 先執行:
