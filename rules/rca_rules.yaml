@@ -1,0 +1,51 @@
+# rca_rules.yaml
+# [ASSUME] 本檔為依過去對話片段重建之欄位結構，非直接讀取 v1.2 原始檔案。
+# 請比對 v1.2 的 backend/rules/rca_rules.yaml 與 rules_loader.py 驗證邏輯後修正本檔。
+#
+# 已知來自過去對話的事實（非假設）：
+#   - v1.2 的 rules_loader.py 會驗證：缺欄位、regex 是否可編譯、id 是否重複、建議是否為空
+#   - 找不到檔案或檔案全壞時，loader 會退回內建規則（fallback）
+#   - 前端 zk_rca_rules_editor.html 鏡射同一套驗證邏輯
+#
+# 以下欄位結構為 [ASSUME]，需人工核對：
+
+version: 1
+
+# 時間窗設定：同站點內，多筆告警落在此秒數內視為同一 Incident 候選
+correlation_window_seconds: 900  # [ASSUME] 15 分鐘，需核對 v1.2 實際值（過去對話提及 KPI 側是 60 分鐘容忍，RCA 側數值待確認）
+
+rules:
+  - id: R-TX-001
+    match_pattern: "傳輸中斷|傳輸異常|Transmission.*(Down|Fail)"
+    severity_weight: 100          # 數值越大，優先判定為 root cause
+    category: transmission
+    suggestion: "優先檢查傳輸線路與對應傳輸設備連線狀態"
+    enabled: true
+
+  - id: R-CELL-001
+    match_pattern: "小區離線|Cell.*(Down|Offline)"
+    severity_weight: 60
+    category: cell
+    suggestion: "確認小區是否因上游傳輸或電力異常而離線，非獨立故障"
+    enabled: true
+
+  - id: R-PWR-001
+    match_pattern: "電力異常|市電中斷|Power.*(Fail|Loss)"
+    severity_weight: 90
+    category: power
+    suggestion: "確認站點電力/電池備援狀態，優先排除市電問題"
+    enabled: true
+
+  - id: R-HW-001
+    match_pattern: "硬體故障|板卡異常|Hardware.*Fault"
+    severity_weight: 80
+    category: hardware
+    suggestion: "安排現場人員檢查對應板卡，必要時備品更換"
+    enabled: true
+
+  - id: R-DEFAULT
+    match_pattern: ".*"
+    severity_weight: 10
+    category: unknown
+    suggestion: "尚無對應規則，建議人工判斷根因"
+    enabled: true
