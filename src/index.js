@@ -26,14 +26,14 @@ export default {
     // /api/* 由本 Worker 處理
     if (path.startsWith('/api/')) {
       try {
-        if (path === '/api/health') return handleHealth(request, env);
-        if (path === '/api/alarms/import') return handleIngestCsv(request, env);
-        if (path === '/api/alarms/webhook') return handleWebhook(request, env);
-        if (path === '/api/alarms') return handleListAlarms(request, env);
-        if (path === '/api/incidents') return handleListIncidents(request, env);
+        if (path === '/api/health') return await handleHealth(request, env);
+        if (path === '/api/alarms/import') return await handleIngestCsv(request, env);
+        if (path === '/api/alarms/webhook') return await handleWebhook(request, env);
+        if (path === '/api/alarms') return await handleListAlarms(request, env);
+        if (path === '/api/incidents') return await handleListIncidents(request, env);
 
         var incidentMatch = path.match(/^\/api\/incidents\/([a-zA-Z0-9-]+)$/);
-        if (incidentMatch) return handleGetIncidentDetail(request, env, incidentMatch[1]);
+        if (incidentMatch) return await handleGetIncidentDetail(request, env, incidentMatch[1]);
 
         return jsonErr('找不到路由: ' + path, 404);
       } catch (e) {
