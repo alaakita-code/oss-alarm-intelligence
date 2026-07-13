@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
@@ -216,16 +216,7 @@ input[type=text], input[type=url], select {
       <h3>API 端點設定</h3>
       <input type="url" id="api-base-input" placeholder="例如 https://oss-alarm-intelligence.pages.dev">
       <button class="btn" onclick="saveApiBase()">儲存</button>
-      <p style="font-size:12px;color:var(--muted);margin-top:8px;">未部署前可留空，將使用本頁同網域 /api</p>
-    </div>
-    <div class="card">
-      <h3>關於</h3>
-      <p style="font-size:13px;color:var(--muted);">OSS Alarm Intelligence — ALAAKITA 純 Cloudflare 邊緣運算作品線。資料來源：Cloudflare D1，離線時退回本機快取。</p>
-    </div>
-  </div>
-</div>
-
-<script>
+      <script>
 var AppState = {
   apiBase: '',
   lastIncidents: [],
@@ -453,4 +444,4 @@ function saveApiBase() {
 })();
 </script>
 </body>
-</html>
+    </html>
