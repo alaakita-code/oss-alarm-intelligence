@@ -213,13 +213,13 @@ async function generateAiSummary(env, incident, alarmTexts) {
   }
 }
 
-async function processBatchCorrelation(env, batchId, r2Ref) {
+async function processBatchCorrelation(env, batchId) {
   var rows = await env.DB.prepare(
-    'SELECT * FROM alarms WHERE r2_ref = ? AND incident_id IS NULL'
-  ).bind(r2Ref).all();
+    'SELECT * FROM alarms WHERE batch_id = ? AND incident_id IS NULL'
+  ).bind(batchId).all();
 
   var alarms = rows.results.map(function (r) {
-    return { id: r.id, site_id: r.site_id, ts: r.ts, text: r.raw_text };
+    return { id: r.id, site_id: r.site_id, ts: r.ts, text: r.raw_text, severity: r.severity };
   });
 
   if (alarms.length === 0) return;
@@ -299,12 +299,15 @@ export default {
       var msg = batch.messages[i];
       try {
         if (msg.body.type === 'correlate_batch') {
-          await processBatchCorrelation(env, msg.body.batch_id, msg.body.r2_ref);
+          await processBatchCorrelation(env, msg.body.batch_id);
         } else if (msg.body.type === 'webhook_alarm') {
           await processWebhookAlarm(env, msg.body.payload);
+        } else {
+          console.error('未知的Queue訊息type: ' + msg.body.type, JSON.stringify(msg.body));
         }
         msg.ack();
       } catch (e) {
+        console.error('processQueue失敗: ' + (e.message || String(e)));
         msg.retry();
       }
     }
