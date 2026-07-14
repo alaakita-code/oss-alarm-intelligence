@@ -9,12 +9,19 @@
 //   - 錯誤分層：alarms寫入D1是核心路徑，失敗才算真失敗；
 //     R2備份、import_batches稽核紀錄、Queue送出關聯分析為best-effort，
 //     個別失敗不中斷主流程，但會在回應中以warnings告知使用者
+//   - 重複告警偵測：以「site_id + raw_text + ts」三者完全相同視為同一筆重複，
+//     分兩層檢查——同批次內部自我重複、以及跟資料庫既有紀錄的跨批次重複，
+//     兩者皆視為skipped並在errors中標明原因，不會重複寫入或重複觸發關聯分析
 
 import { csvTextToObjects } from '../lib/csv_parse.js';
-import { normalizeAlarmBatch } from '../lib/normalize.js';
+import { normalizeAlarmRow } from '../lib/normalize.js';
 
 // 單批最大匯入筆數。超過就明確拒絕，而不是讓它撞到D1/Worker限制默默失敗。
 var MAX_ROWS_PER_IMPORT = 5000;
+
+// 跨批次重複檢查時，site_id IN (...) 查詢每批最多帶入的參數數量，
+// 避免單次SQL參數過多（D1/SQLite有參數數量上限），超過就分批查詢再合併結果。
+var DEDUPE_QUERY_CHUNK_SIZE = 100;
 
 function uuid() {
   return crypto.randomUUID();
@@ -27,6 +34,18 @@ function jsonRes(obj, status) {
   });
 }
 
+function dedupeKey(siteId, rawText, ts) {
+  return siteId + '|' + rawText + '|' + ts;
+}
+
+function chunkArray(arr, size) {
+  var chunks = [];
+  for (var i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 // best-effort記錄批次稽核資料。失敗不拋出，回傳boolean供呼叫端組裝警告訊息。
 async function tryRecordImportBatch(env, batchId, filename, importedCount, skippedCount, errors, r2Key, createdAt) {
   try {
@@ -37,6 +56,27 @@ async function tryRecordImportBatch(env, batchId, filename, importedCount, skipp
   } catch (e) {
     return false;
   }
+}
+
+// 查詢資料庫中既有的告警，比對「site_id + raw_text + ts」是否已存在。
+// best-effort：查詢失敗時回傳null（呼叫端會略過跨批次重複檢查並附上警告，不阻擋匯入）。
+async function fetchExistingKeys(env, siteIds, minTs, maxTs) {
+  if (siteIds.length === 0) return new Set();
+  var existingKeys = new Set();
+  var chunks = chunkArray(siteIds, DEDUPE_QUERY_CHUNK_SIZE);
+  for (var c = 0; c < chunks.length; c++) {
+    var chunk = chunks[c];
+    var placeholders = chunk.map(function () { return '?'; }).join(',');
+    var sql = 'SELECT site_id, raw_text, ts FROM alarms WHERE site_id IN (' + placeholders + ') AND ts >= ? AND ts <= ?';
+    var stmt = env.DB.prepare(sql);
+    var bindArgs = chunk.concat([minTs, maxTs]);
+    var res = await stmt.bind.apply(stmt, bindArgs).all();
+    var rows = (res && res.results) || [];
+    for (var r = 0; r < rows.length; r++) {
+      existingKeys.add(dedupeKey(rows[r].site_id, rows[r].raw_text, rows[r].ts));
+    }
+  }
+  return existingKeys;
 }
 
 export async function handleIngestCsv(request, env) {
@@ -78,8 +118,6 @@ export async function handleIngestCsv(request, env) {
   var warnings = [];
 
   // 原始CSV落地R2(選用，best-effort)。
-  // R2非必要依賴：若未綁定RAW_BUCKET，或寫入過程失敗(例如未啟用R2訂閱)，
-  // 都跳過原始檔備份、不影響匯入本身，r2Key維持null。
   var r2Key = null;
   if (env.RAW_BUCKET) {
     var candidateR2Key = 'raw-csv/' + new Date().toISOString().replace(/[:.]/g, '-') + '_' + batchId + '.csv';
@@ -91,15 +129,34 @@ export async function handleIngestCsv(request, env) {
     }
   }
 
-  // 正規化
-  var result = normalizeAlarmBatch(rawRows);
-  var normalized = result.normalized;
-  var errors = result.errors;
+  // ---- 第一階段：逐列正規化 + 同批次內部自我重複檢查 ----
+  var errors = [];
+  var formatValidCount = 0;
+  var candidates = []; // { row_index, alarm, key }
+  var seenKeysInBatch = new Set();
+
+  for (var i = 0; i < rawRows.length; i++) {
+    var normResult = normalizeAlarmRow(rawRows[i]);
+    if (!normResult.ok) {
+      errors.push({ row_index: i, error: normResult.error });
+      continue;
+    }
+    formatValidCount++;
+    var alarm = normResult.alarm;
+    var key = dedupeKey(alarm.site_id, alarm.raw_text, alarm.ts);
+
+    if (seenKeysInBatch.has(key)) {
+      errors.push({ row_index: i, error: '重複告警（與同批次內其他列重複），已跳過' });
+      continue;
+    }
+    seenKeysInBatch.add(key);
+    candidates.push({ row_index: i, alarm: alarm, key: key });
+  }
+
   var now = Math.floor(Date.now() / 1000);
 
-  // 整批100%正規化失敗：多半是CSV欄位名稱對不上，給明確提示而非「成功0筆」的模糊回應
-  if (normalized.length === 0 && rawRows.length > 0) {
-    // 仍嘗試記錄這次失敗的匯入嘗試，方便之後追查（best-effort，失敗不影響錯誤回應本身）
+  // 整批100%正規化失敗（連格式都對不上）：多半是CSV欄位名稱問題，給明確提示
+  if (formatValidCount === 0) {
     await tryRecordImportBatch(env, batchId, file.name || 'unknown.csv', 0, errors.length, errors, r2Key, now);
 
     var headerHint = '本批 ' + rawRows.length + ' 筆全數正規化失敗，請確認 CSV 欄位名稱是否正確（需包含：站點代碼/site_id、告警類型/description、嚴重度/severity、時間/timestamp）';
@@ -114,12 +171,60 @@ export async function handleIngestCsv(request, env) {
     }, 400);
   }
 
-  // 批次寫入D1（逐筆但用單一batch，避免逐筆網路往返）
-  // 這是核心路徑：alarms資料若寫入失敗，代表本批實際上完全沒有匯入，
-  // 必須明確回報失敗，不能讓例外裸奔到Cloudflare預設錯誤頁。
+  // ---- 第二階段：跨批次重複檢查（跟資料庫既有紀錄比對）----
+  var finalCandidates = candidates;
+  if (candidates.length > 0) {
+    var siteIdSet = {};
+    var minTs = candidates[0].alarm.ts;
+    var maxTs = candidates[0].alarm.ts;
+    for (var j = 0; j < candidates.length; j++) {
+      siteIdSet[candidates[j].alarm.site_id] = true;
+      if (candidates[j].alarm.ts < minTs) minTs = candidates[j].alarm.ts;
+      if (candidates[j].alarm.ts > maxTs) maxTs = candidates[j].alarm.ts;
+    }
+    var siteIds = Object.keys(siteIdSet);
+
+    var existingKeys = null;
+    try {
+      existingKeys = await fetchExistingKeys(env, siteIds, minTs, maxTs);
+    } catch (e) {
+      existingKeys = null;
+    }
+
+    if (existingKeys === null) {
+      warnings.push('跨批次重複比對查詢失敗，本批已略過重複檢查直接匯入，請留意是否有重複資料');
+    } else {
+      finalCandidates = [];
+      for (var k = 0; k < candidates.length; k++) {
+        if (existingKeys.has(candidates[k].key)) {
+          errors.push({ row_index: candidates[k].row_index, error: '重複告警（資料庫中已有相同站點/內容/時間的紀錄），已跳過' });
+        } else {
+          finalCandidates.push(candidates[k]);
+        }
+      }
+    }
+  }
+
+  // 全部都是重複資料（格式都對，但比對後100%是重複），跟「格式錯誤」分開給不同提示
+  if (finalCandidates.length === 0) {
+    await tryRecordImportBatch(env, batchId, file.name || 'unknown.csv', 0, errors.length, errors, r2Key, now);
+
+    var dupHint = '本批 ' + rawRows.length + ' 筆比對後全部為重複告警（同批次內或資料庫已有相同紀錄），未新增任何資料';
+    return jsonRes({
+      ok: true,
+      batch_id: batchId,
+      imported: 0,
+      skipped: errors.length,
+      errors: errors.slice(0, 20),
+      warnings: warnings.length > 0 ? warnings : undefined,
+      hint: dupHint
+    });
+  }
+
+  // ---- 第三階段：批次寫入D1（核心路徑）----
   var stmts = [];
-  for (var i = 0; i < normalized.length; i++) {
-    var a = normalized[i];
+  for (var m = 0; m < finalCandidates.length; m++) {
+    var a = finalCandidates[m].alarm;
     var alarmId = uuid();
     stmts.push(
       env.DB.prepare(
@@ -140,15 +245,14 @@ export async function handleIngestCsv(request, env) {
     }
   }
 
-  // 記錄匯入批次（best-effort，稽核用途，失敗不影響本次匯入已成功的事實）
-  var batchRecorded = await tryRecordImportBatch(env, batchId, file.name || 'unknown.csv', normalized.length, errors.length, errors, r2Key, now);
+  // 記錄匯入批次（best-effort）
+  var batchRecorded = await tryRecordImportBatch(env, batchId, file.name || 'unknown.csv', finalCandidates.length, errors.length, errors, r2Key, now);
   if (!batchRecorded) {
     warnings.push('匯入批次稽核紀錄寫入失敗，不影響本次告警資料，但此批次不會出現在匯入歷史中');
   }
 
-  // 觸發背景關聯分析（丟進Queue，由consumer處理，不同步阻塞回應；best-effort）
-  // 只送 batch_id，consumer端查詢一律用 batch_id，不再依賴 r2_ref
-  if (normalized.length > 0) {
+  // 觸發背景關聯分析（best-effort）
+  if (finalCandidates.length > 0) {
     try {
       await env.ALARM_QUEUE.send({ type: 'correlate_batch', batch_id: batchId });
     } catch (e) {
@@ -159,7 +263,7 @@ export async function handleIngestCsv(request, env) {
   var response = {
     ok: true,
     batch_id: batchId,
-    imported: normalized.length,
+    imported: finalCandidates.length,
     skipped: errors.length,
     errors: errors
   };
