@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Incident 狀態更新測試工具</title>
+<style>
+  body {
+    font-family: -apple-system, "Noto Sans TC", sans-serif;
+    background: #F4F6F9;
+    color: #1B2A4A;
+    margin: 0;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 18px;
+    color: #0F2A5C;
+    margin-bottom: 4px;
+  }
+  p.sub {
+    font-size: 13px;
+    color: #5A6B85;
+    margin-top: 0;
+    margin-bottom: 20px;
+  }
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0F2A5C;
+    margin-top: 14px;
+    margin-bottom: 4px;
+  }
+  input, select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px;
+    font-size: 15px;
+    border: 1px solid #C7CFDB;
+    border-radius: 6px;
+    background: #fff;
+  }
+  button {
+    margin-top: 18px;
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    background: #C9962C;
+    border: none;
+    border-radius: 6px;
+  }
+  button:active { background: #B3841F; }
+  #result {
+    margin-top: 20px;
+    padding: 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    display: none;
+  }
+  #result.ok { background: #E7F5EC; border: 1px solid #7FC79A; color: #1E5C33; display: block; }
+  #result.err { background: #FBEAEA; border: 1px solid #E29A9A; color: #7A2020; display: block; }
+  #status-line {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #5A6B85;
+  }
+</style>
+</head>
+<body>
+
+<h1>Incident 狀態更新測試工具</h1>
+<p class="sub">直接用瀏覽器 fetch 送出 PATCH 請求,不透過第三方工具</p>
+
+<label>API 網域(不含路徑,例如 https://oss-alarm-intelligence.alaakita.workers.dev)</label>
+<input id="domain" type="text" placeholder="https://oss-alarm-intelligence.alaakita.workers.dev">
+
+<label>Incident ID</label>
+<input id="incidentId" type="text" placeholder="例如 5cdd92ae-d54b-4150-a80c-8f8a08dda7c6">
+
+<label>要更新成的狀態</label>
+<select id="statusValue">
+  <option value="acknowledged">acknowledged(已確認)</option>
+  <option value="resolved">resolved(已解決)</option>
+  <option value="open">open(未處理)</option>
+</select>
+
+<button onclick="sendPatch()">送出 PATCH 請求</button>
+
+<div id="status-line"></div>
+<div id="result"></div>
+
+<script>
+function sendPatch() {
+  var domain = document.getElementById('domain').value.trim().replace(/\/$/, '');
+  var id = document.getElementById('incidentId').value.trim();
+  var status = document.getElementById('statusValue').value;
+  var resultEl = document.getElementById('result');
+  var statusLine = document.getElementById('status-line');
+
+  resultEl.className = '';
+  resultEl.style.display = 'none';
+  statusLine.textContent = '';
+
+  if (!domain || !id) {
+    statusLine.textContent = '請先填寫網域跟 Incident ID';
+    return;
+  }
+
+  var url = domain + '/api/incidents/' + id;
+  statusLine.textContent = '送出中... 目標網址: ' + url;
+
+  fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: status })
+  })
+  .then(function (res) {
+    statusLine.textContent = 'HTTP 狀態碼: ' + res.status;
+    return res.text().then(function (text) {
+      return { status: res.status, text: text };
+    });
+  })
+  .then(function (data) {
+    var pretty;
+    try {
+      pretty = JSON.stringify(JSON.parse(data.text), null, 2);
+    } catch (e) {
+      pretty = data.text;
+    }
+    resultEl.textContent = pretty;
+    resultEl.className = (data.status >= 200 && data.status < 300) ? 'ok' : 'err';
+  })
+  .catch(function (err) {
+    statusLine.textContent = '請求失敗(可能是網路或 CORS 問題)';
+    resultEl.textContent = '錯誤訊息: ' + err.message;
+    resultEl.className = 'err';
+  });
+}
+</script>
+
+</body>
+</html>
