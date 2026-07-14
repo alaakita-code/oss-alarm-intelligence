@@ -82,13 +82,15 @@ export async function handleIngestCsv(request, env) {
       'INSERT INTO import_batches (id, filename, imported_count, skipped_count, errors_json, r2_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).bind(batchId, file.name || 'unknown.csv', 0, errors.length, JSON.stringify(errors), r2Key, Math.floor(Date.now() / 1000)).run();
 
+    var headerHint = '本批 ' + rawRows.length + ' 筆全數正規化失敗，請確認 CSV 欄位名稱是否正確（需包含：站點代碼/site_id、告警類型/description、嚴重度/severity、時間/timestamp）';
     return jsonRes({
       ok: false,
+      error: headerHint,
+      hint: headerHint,
       batch_id: batchId,
       imported: 0,
       skipped: errors.length,
-      errors: errors.slice(0, 5),
-      hint: '本批 ' + rawRows.length + ' 筆全數正規化失敗，請確認 CSV 欄位名稱是否正確（例如是否包含站點代碼欄位）'
+      errors: errors.slice(0, 5)
     }, 400);
   }
 
