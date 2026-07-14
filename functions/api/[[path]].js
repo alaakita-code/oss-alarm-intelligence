@@ -9,7 +9,7 @@
 import { handleHealth } from '../../workers/routes/health.js';
 import { handleIngestCsv } from '../../workers/routes/ingest.js';
 import { handleWebhook } from '../../workers/routes/webhook.js';
-import { handleListIncidents, handleGetIncidentDetail, handleListAlarms } from '../../workers/routes/query.js';
+import { handleListIncidents, handleGetIncidentDetail, handleListAlarms, handleUpdateIncidentStatus } from '../../workers/routes/query.js';
 
 function jsonErr(msg, status) {
   return new Response(JSON.stringify({ ok: false, error: msg }), {
@@ -32,7 +32,10 @@ export async function onRequest(context) {
     if (path === '/api/incidents') return handleListIncidents(request, env);
 
     var incidentMatch = path.match(/^\/api\/incidents\/([a-zA-Z0-9-]+)$/);
-    if (incidentMatch) return handleGetIncidentDetail(request, env, incidentMatch[1]);
+    if (incidentMatch) {
+      if (request.method === 'PATCH') return handleUpdateIncidentStatus(request, env, incidentMatch[1]);
+      return handleGetIncidentDetail(request, env, incidentMatch[1]);
+    }
 
     return jsonErr('找不到路由: ' + path, 404);
   } catch (e) {
