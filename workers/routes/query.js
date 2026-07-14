@@ -40,6 +40,40 @@ export async function handleGetIncidentDetail(request, env, incidentId) {
   return jsonRes({ ok: true, incident: incident, alarms: alarms.results });
 }
 
+// 對應新增端點 PATCH /api/incidents/:id
+// body 範例: { "status": "acknowledged" }
+export async function handleUpdateIncidentStatus(request, env, incidentId) {
+  if (request.method !== 'PATCH') {
+    return jsonRes({ ok: false, error: 'Method not allowed' }, 405);
+  }
+
+  var body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return jsonRes({ ok: false, error: 'Body 必須為合法 JSON' }, 400);
+  }
+
+  var allowedStatus = ['open', 'acknowledged', 'resolved'];
+  if (allowedStatus.indexOf(body.status) === -1) {
+    return jsonRes({ ok: false, error: 'status 必須是 open / acknowledged / resolved 其中之一' }, 400);
+  }
+
+  var existing = await env.DB.prepare('SELECT id FROM incidents WHERE id = ?').bind(incidentId).first();
+  if (!existing) {
+    return jsonRes({ ok: false, error: '找不到該 Incident' }, 404);
+  }
+
+  var now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(
+    'UPDATE incidents SET status = ?, updated_at = ? WHERE id = ?'
+  ).bind(body.status, now, incidentId).run();
+
+  var updated = await env.DB.prepare('SELECT * FROM incidents WHERE id = ?').bind(incidentId).first();
+
+  return jsonRes({ ok: true, incident: updated });
+}
+
 export async function handleListAlarms(request, env) {
   var url = new URL(request.url);
   var siteId = url.searchParams.get('site_id');
