@@ -4,9 +4,14 @@
 //   - 原始CSV完整落地R2(選用,key含時間戳,不覆寫)
 //   - 每筆寫入D1前先正規化
 //   - batch_id 為批次關聯鍵（不依賴r2_ref，r2_ref可能因R2未綁定而為NULL）
+//   - 單批筆數上限保護，避免超大檔案撞到記憶體/CPU/D1 batch上限而整包默默失敗
+//   - 若整批100%正規化失敗，回明確提示（多半是CSV欄位名稱對不上）
 
 import { csvTextToObjects } from '../lib/csv_parse.js';
 import { normalizeAlarmBatch } from '../lib/normalize.js';
+
+// 單批最大匯入筆數。超過就明確拒絕，而不是讓它撞到D1/Worker限制默默失敗。
+var MAX_ROWS_PER_IMPORT = 5000;
 
 function uuid() {
   return crypto.randomUUID();
@@ -43,6 +48,17 @@ export async function handleIngestCsv(request, env) {
     return jsonRes({ ok: false, error: 'CSV 內容為空或格式無法解析' }, 400);
   }
 
+  // 筆數上限檢查：在正規化與寫入D1之前就擋下，避免浪費運算資源
+  if (rawRows.length > MAX_ROWS_PER_IMPORT) {
+    return jsonRes({
+      ok: false,
+      error: 'CSV 筆數超過單批上限',
+      row_count: rawRows.length,
+      max_rows: MAX_ROWS_PER_IMPORT,
+      hint: '請將檔案拆分成每批不超過 ' + MAX_ROWS_PER_IMPORT + ' 筆後分次上傳'
+    }, 400);
+  }
+
   var batchId = uuid();
 
   // 原始CSV落地R2(選用)，key含時間戳，不覆寫
@@ -58,6 +74,23 @@ export async function handleIngestCsv(request, env) {
   var result = normalizeAlarmBatch(rawRows);
   var normalized = result.normalized;
   var errors = result.errors;
+
+  // 整批100%正規化失敗：多半是CSV欄位名稱對不上，給明確提示而非「成功0筆」的模糊回應
+  if (normalized.length === 0 && rawRows.length > 0) {
+    // 仍記錄這次失敗的匯入嘗試，方便之後追查
+    await env.DB.prepare(
+      'INSERT INTO import_batches (id, filename, imported_count, skipped_count, errors_json, r2_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).bind(batchId, file.name || 'unknown.csv', 0, errors.length, JSON.stringify(errors), r2Key, Math.floor(Date.now() / 1000)).run();
+
+    return jsonRes({
+      ok: false,
+      batch_id: batchId,
+      imported: 0,
+      skipped: errors.length,
+      errors: errors.slice(0, 5),
+      hint: '本批 ' + rawRows.length + ' 筆全數正規化失敗，請確認 CSV 欄位名稱是否正確（例如是否包含站點代碼欄位）'
+    }, 400);
+  }
 
   // 批次寫入D1（逐筆但用單一batch，避免逐筆網路往返）
   var now = Math.floor(Date.now() / 1000);
