@@ -360,15 +360,59 @@ function viewIncident(id) {
 }
 
 function renderIncidentDetail(incident, alarms) {
-  var html = '<h3>' + incident.site_id + ' — Incident 詳情</h3>';
+  var badgeLabel = { open: '未處理', acknowledged: '已確認', resolved: '已解決' }[incident.status] || incident.status;
+  var html = '<h3>' + incident.site_id + ' — Incident 詳情<span class="badge ' + incident.status + '" style="margin-left:8px;">' + badgeLabel + '</span></h3>';
   html += '<p style="margin:10px 0;">' + (incident.ai_summary || incident.suggestion || '') + '</p>';
   html += '<p style="font-size:12px;color:var(--muted);">Root Cause Rule: ' + (incident.root_cause_rule_id || '無') + '</p>';
+
+  html += '<div id="incident-action-row" style="display:flex;gap:8px;margin:14px 0;">';
+  if (incident.status !== 'acknowledged') {
+    html += '<button class="btn gold" onclick="updateIncidentStatus(\'' + incident.id + '\', \'acknowledged\')">確認</button>';
+  }
+  if (incident.status !== 'resolved') {
+    html += '<button class="btn" onclick="updateIncidentStatus(\'' + incident.id + '\', \'resolved\')">解決</button>';
+  }
+  if (incident.status !== 'open') {
+    html += '<button class="btn outline" onclick="updateIncidentStatus(\'' + incident.id + '\', \'open\')">重新開啟</button>';
+  }
+  html += '</div>';
+  html += '<div id="incident-action-msg" style="font-size:13px;margin-bottom:10px;"></div>';
+
   html += '<h3 style="margin-top:16px;">關聯告警（' + alarms.length + ' 筆）</h3>';
   html += alarms.map(function(a) {
     var time = new Date(a.ts * 1000).toLocaleString('zh-TW');
     return '<div class="alarm-row"><span class="sev-' + a.severity + '">' + a.raw_text + '</span><span>' + time + '</span></div>';
   }).join('');
   document.getElementById('incident-detail-body').innerHTML = html;
+}
+
+function updateIncidentStatus(id, newStatus) {
+  var msgEl = document.getElementById('incident-action-msg');
+  var rowEl = document.getElementById('incident-action-row');
+  if (rowEl) {
+    var btns = rowEl.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) btns[i].disabled = true;
+  }
+  if (msgEl) msgEl.textContent = '更新中…';
+
+  fetch(apiUrl('/api/incidents/' + id), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: newStatus })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (!data.ok) {
+      if (msgEl) msgEl.innerHTML = '<span style="color:var(--red);">更新失敗：' + (data.error || '未知錯誤') + '</span>';
+      if (rowEl) { var b2 = rowEl.querySelectorAll('button'); for (var j = 0; j < b2.length; j++) b2[j].disabled = false; }
+      return;
+    }
+    viewIncident(id);
+  })
+  .catch(function(e) {
+    if (msgEl) msgEl.innerHTML = '<span style="color:var(--red);">更新失敗：' + e.message + '</span>';
+    if (rowEl) { var b3 = rowEl.querySelectorAll('button'); for (var k = 0; k < b3.length; k++) b3[k].disabled = false; }
+  });
 }
 
 // ---- 告警清單 ----
